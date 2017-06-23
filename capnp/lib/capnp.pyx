@@ -19,6 +19,7 @@ from cpython cimport Py_buffer
 from cpython.buffer cimport PyBUF_SIMPLE
 
 from types import ModuleType as _ModuleType
+import re as _re
 import os as _os
 import sys as _sys
 import imp as _imp
@@ -849,6 +850,15 @@ cdef _setDynamicFieldStatic(DynamicStruct_Builder thisptr, field, value, parent)
     else:
         raise KjException("Tried to set field: '{}' with a value of: '{}' which is an unsupported type: '{}'".format(field, str(value), str(type(value))))
 
+
+# Convert camelCase/MixedCase to lower_case_with_underscore.
+first_cap_re = _re.compile('(.)([A-Z][a-z]+)')
+all_cap_re = _re.compile('([a-z0-9])([A-Z])')
+def convert_case(name):
+    s1 = first_cap_re.sub(r'\1_\2', name)
+    return all_cap_re.sub(r'\1_\2', s1).lower()
+
+
 cdef _DynamicListBuilder temp_list_b
 cdef _DynamicListReader temp_list_r
 cdef _DynamicResizableListBuilder temp_list_rb
@@ -880,7 +890,8 @@ cdef _to_dict(msg, bint verbose, bint ordered):
 
         for field in temp_msg_b.schema.non_union_fields:
             if verbose or temp_msg_b._has(field):
-                ret[field] = _to_dict(temp_msg_b._get(field), verbose, ordered)
+                _field = convert_case(field)
+                ret[_field] = _to_dict(temp_msg_b._get(field), verbose, ordered)
 
         return ret
     elif msg_type is _DynamicStructReader:
@@ -1442,6 +1453,8 @@ cdef class _DynamicStructBuilder:
 
     def from_dict(self, dict d):
         for key, val in d.iteritems():
+            parts = key.split('_')
+            key = parts[0] + ''.join(((x[0].upper() + x[1:]) if x else '_') for x in parts[1:])
             if key != 'which':
                 try:
                     self._set(key, val)
